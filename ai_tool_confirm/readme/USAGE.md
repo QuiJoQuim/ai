@@ -40,6 +40,8 @@ A scheduled action marks the requests past their expiration date as expired.
   not through XML-RPC/JSON-RPC (API keys, scripts, agents holding the user's
   credentials) and never from inside an AI tool, so an AI cannot approve its
   own actions.
+- An approval is good for one execution: if the approved tool runs an LLM
+  itself, that LLM calling the same tool again needs a new confirmation.
 - Nobody can edit a request once made. If a module update changes what the tool
   executes, the request fails instead of running something else.
   Administrators can only change the *Human Confirmation* of a tool, not what

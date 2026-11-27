@@ -67,9 +67,18 @@ class AiTool(models.Model):
     def _execute_tool(self, *args, record=None, **kwargs):
         token = running_tool.set(True)
         try:
-            if self.requires_confirmation and approved_tool.get() != self.id:
+            if not self.requires_confirmation:
+                return super()._execute_tool(*args, record=record, **kwargs)
+            if approved_tool.get() != self.id:
                 return self._request_confirmation(args, kwargs, record)
-            return super()._execute_tool(*args, record=record, **kwargs)
+            # Security: an approval is good for one execution. If the tool
+            # runs an LLM itself (nested agents), that LLM calling this same
+            # tool again needs a confirmation of its own.
+            consumed = approved_tool.set(None)
+            try:
+                return super()._execute_tool(*args, record=record, **kwargs)
+            finally:
+                approved_tool.reset(consumed)
         finally:
             running_tool.reset(token)
 

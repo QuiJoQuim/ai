@@ -157,6 +157,30 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(new_partner.create_uid, self.requester)
         self.assertIn(str(new_partner.id), request.result)
 
+    def test_approval_is_single_use(self):
+        """If the approved tool runs an LLM that calls it again, that call
+        needs its own confirmation."""
+        tool, executed = self._create_partner_tool()
+        inner_results = []
+        original = type(self.env["ai.tool"])._ai_create_partner
+
+        def create_twice(tool_model, name=None, fail=False):
+            if name == "AI Outer":
+                inner_results.append(
+                    tool.with_env(tool_model.env)._execute_tool(name="AI Inner")
+                )
+            return original(tool_model, name=name, fail=fail)
+
+        with patch.object(
+            type(self.env["ai.tool"]), "_ai_create_partner", create_twice
+        ):
+            result = tool.with_user(self.requester)._execute_tool(name="AI Outer")
+            self._request(result, self.requester).action_approve()
+        Partner = self.env["res.partner"]
+        self.assertTrue(Partner.search([("name", "=", "AI Outer")]))
+        self.assertFalse(Partner.search([("name", "=", "AI Inner")]))
+        self.assertEqual(inner_results[0]["status"], "pending_confirmation")
+
     def test_tool_changed_since_request(self):
         request = self._request(self._call_post_message(self.requester), self.requester)
         self.post_message.function_name = "_ai_get_date"
