@@ -502,6 +502,37 @@ class TestAiToolConfirm(AiToolConfirmCase):
             third["request_id"], (first["request_id"], second["request_id"])
         )
 
+    def test_pending_limit(self):
+        self.env["ir.config_parameter"].set_param(
+            "ai_tool_confirm.max_pending_per_hour", "2"
+        )
+        tool = self.post_message.with_user(self.requester)
+        partner = self.partner.with_user(self.requester)
+        tool._execute_tool(message="One", record=partner)
+        tool._execute_tool(message="Two", record=partner)
+        with self.assertRaises(UserError):
+            tool._execute_tool(message="Three", record=partner)
+        # Answered requests and older ones do not count
+        self.Request.search([], limit=1).with_user(self.requester).action_reject()
+        tool._execute_tool(message="Three", record=partner)
+        with freeze_time(fields.Datetime.now() + timedelta(hours=2)):
+            tool._execute_tool(message="Four", record=partner)
+        # Per approver: another user still gets requests
+        self.post_message.with_user(self.other_user)._execute_tool(
+            message="Other", record=self.partner.with_user(self.other_user)
+        )
+        # 0: no limit
+        self.env["ir.config_parameter"].set_param(
+            "ai_tool_confirm.max_pending_per_hour", "0"
+        )
+        tool._execute_tool(message="Five", record=partner)
+
+    def test_invalid_limit_setting(self):
+        with self.assertRaises(ValidationError):
+            self.env["res.config.settings"].create(
+                {"ai_tool_confirm_max_pending_per_hour": -1}
+            )
+
     def test_audit_note_without_write_access(self):
         """The audit trail does not depend on whether the approver can post
         on the record: a user who can only read it still leaves the note."""

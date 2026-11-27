@@ -52,7 +52,8 @@ A scheduled action marks the requests past their expiration date as expired.
   approval, and the arguments were proposed for its state at request time.
   Check the record before approving a request that has waited for a while.
 - A call identical to a pending request does not create another one: the AI
-  gets the pending one back.
+  gets the pending one back. Each approver receives a limited number of
+  requests per hour (see *Configuration*), so that nobody gets flooded.
 - Integrations must execute tools through `_execute_tool` (as `ai_connection`
   and MCP servers do), and must never let an LLM call methods of its choice:
   both would skip the confirmation.

@@ -6,7 +6,7 @@ import math
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
-from .ai_tool_request import DEFAULT_EXPIRATION_HOURS
+from .ai_tool_request import DEFAULT_EXPIRATION_HOURS, DEFAULT_MAX_PENDING_PER_HOUR
 
 
 class ResConfigSettings(models.TransientModel):
@@ -28,6 +28,23 @@ class ResConfigSettings(models.TransientModel):
         "(scheduled actions, job queues, webhooks) on records without a "
         "responsible user.",
     )
+
+    ai_tool_confirm_max_pending_per_hour = fields.Integer(
+        string="AI Confirmation Limit (per hour)",
+        config_parameter="ai_tool_confirm.max_pending_per_hour",
+        default=DEFAULT_MAX_PENDING_PER_HOUR,
+        help="Pending AI tool requests a user can receive in an hour. Beyond "
+        "it, new requests are refused, so that nobody gets flooded. Use 0 "
+        "for no limit.",
+    )
+
+    @api.constrains("ai_tool_confirm_max_pending_per_hour")
+    def _check_ai_tool_confirm_max_pending_per_hour(self):
+        for settings in self:
+            if settings.ai_tool_confirm_max_pending_per_hour < 0:
+                raise ValidationError(
+                    self.env._("The AI confirmation limit must be 0 or more.")
+                )
 
     @api.constrains("ai_tool_confirm_expiration_hours")
     def _check_ai_tool_confirm_expiration_hours(self):

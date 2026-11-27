@@ -57,6 +57,10 @@ In *Settings > General Settings > AI*:
 
 - **AI confirmation expiration**: hours a pending request waits for an
   answer before it expires (24 by default, 0 for never).
+- **AI confirmation limit**: pending requests a user can receive in an
+  hour (20 by default, 0 for no limit). Beyond it, new requests are
+  refused and the AI is told so: nobody gets flooded with requests,
+  which would end up approved without being read.
 - **AI confirmation fallback approver**: user who confirms the requests
   with no person behind (scheduled actions, job queues, webhooks) on
   records without a responsible user. Avoid an administrator here:
@@ -134,7 +138,9 @@ date as expired.
   time. Check the record before approving a request that has waited for
   a while.
 - A call identical to a pending request does not create another one: the
-  AI gets the pending one back.
+  AI gets the pending one back. Each approver receives a limited number
+  of requests per hour (see *Configuration*), so that nobody gets
+  flooded.
 - Integrations must execute tools through ``_execute_tool`` (as
   ``ai_connection`` and MCP servers do), and must never let an LLM call
   methods of its choice: both would skip the confirmation.

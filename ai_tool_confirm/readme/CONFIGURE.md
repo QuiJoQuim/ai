@@ -2,6 +2,10 @@ In *Settings > General Settings > AI*:
 
 - **AI confirmation expiration**: hours a pending request waits for an answer
   before it expires (24 by default, 0 for never).
+- **AI confirmation limit**: pending requests a user can receive in an hour (20
+  by default, 0 for no limit). Beyond it, new requests are refused and the AI is
+  told so: nobody gets flooded with requests, which would end up approved
+  without being read.
 - **AI confirmation fallback approver**: user who confirms the requests with no
   person behind (scheduled actions, job queues, webhooks) on records without a
   responsible user. Avoid an administrator here: approved actions run with the

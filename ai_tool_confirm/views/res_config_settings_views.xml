@@ -16,6 +16,13 @@
                         <field name="ai_tool_confirm_expiration_hours" />
                     </setting>
                     <setting
+                        id="ai_tool_confirm_limit_setting"
+                        string="AI confirmation limit"
+                        help="Pending AI actions a user can receive in an hour (0: no limit)"
+                    >
+                        <field name="ai_tool_confirm_max_pending_per_hour" />
+                    </setting>
+                    <setting
                         id="ai_tool_confirm_fallback_approver_setting"
                         string="AI confirmation fallback approver"
                         help="Confirms AI actions with no person behind (scheduled actions, job queues, webhooks) on records without a responsible user"

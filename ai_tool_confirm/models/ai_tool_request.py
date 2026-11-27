@@ -16,6 +16,7 @@ from .ai_tool import approved_tool, running_tool
 _logger = logging.getLogger(__name__)
 
 DEFAULT_EXPIRATION_HOURS = 24.0
+DEFAULT_MAX_PENDING_PER_HOUR = 20
 
 
 class AiToolRequest(models.Model):
@@ -151,11 +152,13 @@ class AiToolRequest(models.Model):
             "approver_id": approver.id,
             "company_id": self.env.company.id,
         }
-        # Security: an LLM repeating itself must not bury the approver in
-        # requests: they would end up approving without reading.
+        # Security: an LLM repeating itself, or flooding the approver, must
+        # not bury them in requests: they would end up approving without
+        # reading.
         duplicate = self._find_pending_duplicate(call)
         if duplicate:
             return duplicate
+        self._check_pending_limit(approver)
         # Security: sudo, because nobody can create requests directly: it is
         # what keeps them from being forged or altered. Only here, after the
         # checks above.
@@ -187,6 +190,37 @@ class AiToolRequest(models.Model):
             ("expiration_date", ">", fields.Datetime.now()),
         ]
         return self.search(domain, limit=1)
+
+    @api.model
+    def _check_pending_limit(self, approver):
+        """Refuse new requests once the approver has received too many in
+        the last hour. 0 means no limit. No sudo: the approver is the
+        requester, or no person is behind and this runs as superuser."""
+        limit = int(
+            self._get_config_param(
+                "ai_tool_confirm.max_pending_per_hour", DEFAULT_MAX_PENDING_PER_HOUR
+            )
+        )
+        if limit <= 0:
+            return
+        count = self.search_count(
+            [
+                ("approver_id", "=", approver.id),
+                ("state", "=", "pending"),
+                ("create_date", ">=", fields.Datetime.now() - timedelta(hours=1)),
+            ]
+        )
+        if count >= limit:
+            # The message goes back to the LLM: tell it to stop
+            raise UserError(
+                self.env._(
+                    "Too many AI actions are waiting for the confirmation of "
+                    "%(user)s (%(count)s in the last hour). Do not request more "
+                    "until they have been answered.",
+                    user=approver.name,
+                    count=count,
+                )
+            )
 
     @api.model
     def _get_config_param(self, key, default=None):
