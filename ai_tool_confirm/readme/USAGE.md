@@ -17,6 +17,27 @@ runs it as OdooBot within a web request, the user of that request. When no
 person is behind (scheduled actions, job queues, webhooks), the responsible
 user of the record (its `user_id` field), or else the fallback approver.
 
+**What the approver sees.** The request shows what the tool will do, so that
+the approver understands it: its arguments, with the names of the records their
+ids refer to (when the model of the record or of the tool has a relational field
+named like the argument), read with the access rights of whoever opens the
+request. A tool can also describe its calls in plain words, with a method named
+after its function plus `_describe`:
+
+```python
+def _ai_create_lead(self, name=None, user_id=None):
+    ...
+
+def _ai_create_lead_describe(self, name=None, user_id=None):
+    user = self.env["res.users"].browse(user_id)
+    return f"Create the lead {name}, assigned to {user.display_name}"
+```
+
+It receives the same arguments as the tool function and must only read data: it
+runs every time the request is displayed. Its arguments are not trusted (an LLM
+wrote them) and it runs with the rights of whoever opens the request, an
+administrator included: never use them to pick a model, a method or a field.
+
 **Where the requests are.** In *Settings > Technical > AI > AI Tool Requests*.
 A scheduled action marks the requests past their expiration date as expired.
 

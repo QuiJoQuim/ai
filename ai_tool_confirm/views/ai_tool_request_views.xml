@@ -60,7 +60,15 @@
                     </group>
                     <notebook>
                         <page string="Arguments" name="arguments">
-                            <field name="arguments" />
+                            <group>
+                                <field
+                                    name="call_description"
+                                    string="What it will do"
+                                    invisible="not call_description"
+                                />
+                                <field name="arguments_display" />
+                                <field name="arguments" string="Arguments (as sent)" />
+                            </group>
                         </page>
                         <page string="Result" name="result" invisible="state != 'done'">
                             <field name="result" />

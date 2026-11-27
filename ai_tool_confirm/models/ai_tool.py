@@ -91,6 +91,43 @@ class AiTool(models.Model):
         self.ensure_one()
         return self.sudo().model_id.model
 
+    def _describe_call(self, arguments, record=None):
+        """Describe a call to this tool for the person who must approve it.
+
+        A tool can explain its calls in plain words with a method named after
+        its function plus ``_describe``, taking the same arguments and
+        returning a string. It is called on the same target as the tool
+        function, with the access rights of the person reading the request.
+        It must only read data: it runs every time the request is displayed.
+        Security: this is not enforced (rolling back a savepoint would also
+        drop the pending tracking of the whole transaction); a describe
+        method is code of the tool, as trusted as the tool function itself.
+        Security: its arguments are NOT trusted: an LLM wrote them, and it
+        runs with the rights of whoever opens the request, an administrator
+        included. Never use them to pick a model, a method or a field.
+
+        :return: the description, or None when the tool does not provide one
+        """
+        self.ensure_one()
+        model = self._get_model_name()
+        method_name = f"{self.function_name}_describe"
+        if self.kind == "record":
+            target = record
+        else:
+            target = self.env[model]
+        if target is None or not hasattr(target, method_name):
+            return None
+        if self.kind == "generic_model":
+            arguments = dict(arguments, record=record)
+        return getattr(target, method_name)(**arguments)
+
+    def _ai_post_message_describe(self, message=None, record=None, **kwargs):
+        return self.env._(
+            "Post a message on %(record)s:\n\n%(message)s",
+            record=record.display_name if record else "?",
+            message=message,
+        )
+
     def _request_confirmation(self, args, kwargs, record):
         """Instead of executing the tool, ask a human to confirm the call."""
         self.ensure_one()

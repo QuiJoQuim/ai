@@ -78,6 +78,63 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertIn("Hello AI", request.arguments)
         self.assertEqual(request.activity_ids.user_id, self.requester)
 
+    def test_readable_arguments(self):
+        """The approver sees who and what the ids of the arguments are."""
+        category = self.env["res.partner.category"].create({"name": "AI Tag"})
+        hidden = self.env["res.partner.category"].create({"name": "AI Hidden Tag"})
+        self.env["ir.rule"].create(
+            {
+                "name": "Hide a tag",
+                "model_id": self.env.ref("base.model_res_partner_category").id,
+                "domain_force": f"[('id', '!=', {hidden.id})]",
+            }
+        )
+        result = self.post_message.with_user(self.requester)._execute_tool(
+            message="Hello AI",
+            user_id=self.other_user.id,
+            category_id=[category.id, hidden.id, 999999],
+            record=self.partner.with_user(self.requester),
+        )
+        request = self._request(result, self.requester)
+        display = request.arguments_display
+        self.assertIn('message: "Hello AI"', display)
+        self.assertIn(
+            f"user_id: {self.other_user.id} → {self.other_user.name}", display
+        )
+        # Names read with the rights of the reader: nothing more is disclosed
+        self.assertIn(
+            f"AI Tag, {hidden.id}: not accessible, 999999: not found", display
+        )
+        self.assertNotIn("AI Hidden Tag", display)
+        # The tool describes its call in plain words
+        self.assertIn("Post a message on AI Partner", request.call_description)
+        self.assertIn("Hello AI", request.call_description)
+
+    def test_readable_arguments_limit(self):
+        """Resolving names is capped: an LLM must not be able to make the
+        request slow to open with a huge list of ids."""
+        users = self.requester | self.other_user | self.fallback
+        ids = users.ids + list(range(10**6, 10**6 + 22))
+        result = self.post_message.with_user(self.requester)._execute_tool(
+            message="Hello AI",
+            user_id=ids,
+            record=self.partner.with_user(self.requester),
+        )
+        display = self._request(result, self.requester).arguments_display
+        self.assertIn("… and 5 more", display)
+        self.assertEqual(display.count("not found"), 17)
+
+    def test_failing_description(self):
+        """A failing description does not hide the request."""
+        AiTool = type(self.env["ai.tool"])
+        result = self._call_post_message(self.requester)
+        request = self._request(result, self.requester)
+        with patch.object(
+            AiTool, "_ai_post_message_describe", side_effect=ValueError("Broken")
+        ):
+            self.assertFalse(request.call_description)
+            self.assertIn("Hello AI", request.arguments_display)
+
     def test_approve(self):
         request = self._request(self._call_post_message(self.requester), self.requester)
         self.assertTrue(request.can_answer)

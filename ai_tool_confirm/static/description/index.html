@@ -446,6 +446,26 @@ when code runs it as OdooBot within a web request, the user of that
 request. When no person is behind (scheduled actions, job queues,
 webhooks), the responsible user of the record (its <tt class="docutils literal">user_id</tt> field),
 or else the fallback approver.</p>
+<p><strong>What the approver sees.</strong> The request shows what the tool will do, so
+that the approver understands it: its arguments, with the names of the
+records their ids refer to (when the model of the record or of the tool
+has a relational field named like the argument), read with the access
+rights of whoever opens the request. A tool can also describe its calls
+in plain words, with a method named after its function plus
+<tt class="docutils literal">_describe</tt>:</p>
+<pre class="code python literal-block">
+<span class="k">def</span><span class="w"> </span><span class="nf">_ai_create_lead</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span><span class="w">
+</span>    <span class="o">...</span><span class="w">
+
+</span><span class="k">def</span><span class="w"> </span><span class="nf">_ai_create_lead_describe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span><span class="w">
+</span>    <span class="n">user</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;res.users&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">browse</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Create the lead </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">, assigned to </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">display_name</span><span class="si">}</span><span class="s2">&quot;</span>
+</pre>
+<p>It receives the same arguments as the tool function and must only read
+data: it runs every time the request is displayed. Its arguments are not
+trusted (an LLM wrote them) and it runs with the rights of whoever opens
+the request, an administrator included: never use them to pick a model,
+a method or a field.</p>
 <p><strong>Where the requests are.</strong> In <em>Settings &gt; Technical &gt; AI &gt; AI Tool
 Requests</em>. A scheduled action marks the requests past their expiration
 date as expired.</p>

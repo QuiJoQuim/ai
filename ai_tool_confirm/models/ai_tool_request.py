@@ -17,6 +17,9 @@ _logger = logging.getLogger(__name__)
 
 DEFAULT_EXPIRATION_HOURS = 24.0
 DEFAULT_MAX_PENDING_PER_HOUR = 20
+# Security: an LLM writes the arguments; resolving a huge list of ids each
+# time someone opens the request would be a denial of service.
+MAX_RESOLVED_IDS = 20
 
 
 class AiToolRequest(models.Model):
@@ -49,6 +52,15 @@ class AiToolRequest(models.Model):
     company_id = fields.Many2one("res.company", readonly=True)
     arguments = fields.Text(
         readonly=True, help="Arguments of the tool call, frozen as JSON."
+    )
+    call_description = fields.Text(
+        compute="_compute_call_display",
+        help="What the tool will do, in the words of the tool itself.",
+    )
+    arguments_display = fields.Text(
+        string="Arguments (readable)",
+        compute="_compute_call_display",
+        help="The arguments, with the names of the records they refer to.",
     )
     res_model = fields.Char(string="Model", readonly=True, index=True)
     res_id = fields.Many2oneReference(
@@ -88,6 +100,38 @@ class AiToolRequest(models.Model):
     result = fields.Text(readonly=True)
     error = fields.Text(readonly=True)
     can_answer = fields.Boolean(compute="_compute_can_answer")
+
+    @api.depends("arguments", "tool_id", "res_model", "res_id")
+    @api.depends_context("uid")
+    def _compute_call_display(self):
+        """An approval is only worth something if the person understands
+        what they approve: "user_id": 7 does not say who 7 is.
+
+        Security: names are read with the rights of the person reading the
+        request (never as superuser), so it shows nothing they could not
+        see otherwise.
+        """
+        env = self.env(su=False)
+        for request in self:
+            try:
+                arguments = json.loads(request.arguments or "{}")
+            except ValueError:
+                arguments = {}
+            tool = env["ai.tool"].browse(request.tool_id.id)
+            record = None
+            if request.res_model in env:
+                record = env[request.res_model].browse(request.res_id).exists()
+            description = False
+            if tool:
+                try:
+                    description = tool._describe_call(arguments, record=record)
+                except Exception as e:
+                    # A failing description must not hide the request
+                    _logger.debug("Cannot describe AI tool request: %s", e)
+            request.call_description = description or False
+            request.arguments_display = request._format_arguments(
+                arguments, tool, record
+            )
 
     @api.depends("res_model", "res_id")
     def _compute_record_ref(self):
@@ -344,6 +388,70 @@ class AiToolRequest(models.Model):
                 f"{self.approver_id.name} to confirm it in Odoo."
             ),
         }
+
+    # Display
+
+    def _format_arguments(self, arguments, tool, record):
+        """One line per argument. Ids are followed by the names of their
+        records when a model of the call (the record's, the tool's) has a
+        relational field with the same name as the argument."""
+        models_to_check = []
+        if record is not None:
+            models_to_check.append(record)
+        if tool:
+            tool_model = tool._get_model_name()
+            if tool_model in self.env:
+                models_to_check.append(self.env[tool_model])
+        lines = []
+        for name, value in arguments.items():
+            line = f"{name}: {json.dumps(value, ensure_ascii=False)}"
+            comodel = next(
+                (
+                    model._fields[name].comodel_name
+                    for model in models_to_check
+                    if name in model._fields and model._fields[name].relational
+                ),
+                None,
+            )
+            names = comodel and self._get_record_names(comodel, value)
+            if names:
+                line += f" → {names}"
+            lines.append(line)
+        return "\n".join(lines) or False
+
+    def _get_record_names(self, comodel, value):
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            ids = [value]
+        elif isinstance(value, list) and all(
+            isinstance(v, int) and not isinstance(v, bool) for v in value
+        ):
+            ids = value
+        else:
+            # Odoo commands, names, ... are shown as they are
+            return None
+        if comodel not in self.env:
+            return None
+        env = self.env(su=False)
+        hidden = len(ids) - MAX_RESOLVED_IDS
+        records = env[comodel].browse(ids[:MAX_RESOLVED_IDS])
+        existing = records.exists()
+        # Security: check the access rules explicitly. Reading a name that is
+        # already in the cache (e.g. read as superuser earlier in the same
+        # request) does not check them.
+        accessible = existing._filtered_access("read")
+        names = []
+        for record in records:
+            if record not in existing:
+                names.append(self.env._("%s: not found", record.id))
+            elif record not in accessible:
+                names.append(self.env._("%s: not accessible", record.id))
+            else:
+                names.append(record.display_name)
+        if hidden > 0:
+            names.append(self.env._("… and %s more", hidden))
+        return ", ".join(names)
 
     # Answer
 
