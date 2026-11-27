@@ -479,6 +479,8 @@ tool, not what the tool executes.</li>
 approval, and the arguments were proposed for its state at request
 time. Check the record before approving a request that has waited for
 a while.</li>
+<li>A call identical to a pending request does not create another one: the
+AI gets the pending one back.</li>
 <li>Integrations must execute tools through <tt class="docutils literal">_execute_tool</tt> (as
 <tt class="docutils literal">ai_connection</tt> and MCP servers do), and must never let an LLM call
 methods of its choice: both would skip the confirmation.</li>

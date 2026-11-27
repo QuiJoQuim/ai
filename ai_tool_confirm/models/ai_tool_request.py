@@ -134,35 +134,59 @@ class AiToolRequest(models.Model):
         try:
             # Security: no default= serializer. What is stored must be
             # exactly what will run: never a str() of an unknown object.
-            frozen_arguments = json.dumps(arguments)
+            # Sorted keys: the same call always freezes the same way, so that
+            # duplicates can be found.
+            frozen_arguments = json.dumps(arguments, sort_keys=True)
         except (TypeError, ValueError) as e:
             raise ValueError(
                 "The arguments of a tool that requires confirmation must be JSON"
             ) from e
         approver = self._get_approver(record)
+        call = {
+            "tool_id": tool.id,
+            "arguments": frozen_arguments,
+            "res_model": record._name if record else False,
+            "res_id": record.id if record else False,
+            "requester_id": self.env.user.id,
+            "approver_id": approver.id,
+            "company_id": self.env.company.id,
+        }
+        # Security: an LLM repeating itself must not bury the approver in
+        # requests: they would end up approving without reading.
+        duplicate = self._find_pending_duplicate(call)
+        if duplicate:
+            return duplicate
         # Security: sudo, because nobody can create requests directly: it is
         # what keeps them from being forged or altered. Only here, after the
         # checks above.
         request = self.sudo().create(
-            {
-                "name": self._get_request_name(tool, record, approver),
-                "tool_id": tool.id,
-                "tool_name": tool.name,
-                "tool_function": tool.function_name,
-                "tool_model": tool._get_model_name(),
-                "tool_kind": tool.kind,
-                "company_id": self.env.company.id,
-                "arguments": frozen_arguments,
-                "res_model": record._name if record else False,
-                "res_id": record.id if record else False,
-                "requester_id": self.env.user.id,
-                "approver_id": approver.id,
-                "origin": self.env.context.get("ai_tool_origin"),
-                "expiration_date": self._get_expiration_date(),
-            }
+            dict(
+                call,
+                name=self._get_request_name(tool, record, approver),
+                tool_name=tool.name,
+                tool_function=tool.function_name,
+                tool_model=tool._get_model_name(),
+                tool_kind=tool.kind,
+                origin=self.env.context.get("ai_tool_origin"),
+                expiration_date=self._get_expiration_date(),
+            )
         )
         request._schedule_confirmation_activity()
         return request.sudo(self.env.su)
+
+    @api.model
+    def _find_pending_duplicate(self, call):
+        """A pending request for exactly the same call, if any. No sudo: the
+        requester can read their own requests."""
+        domain = [("state", "=", "pending")] + [
+            (fname, "=", value) for fname, value in call.items()
+        ]
+        domain += [
+            "|",
+            ("expiration_date", "=", False),
+            ("expiration_date", ">", fields.Datetime.now()),
+        ]
+        return self.search(domain, limit=1)
 
     @api.model
     def _get_config_param(self, key, default=None):

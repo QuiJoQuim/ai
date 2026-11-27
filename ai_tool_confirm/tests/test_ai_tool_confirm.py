@@ -460,6 +460,48 @@ class TestAiToolConfirm(AiToolConfirmCase):
                 {"ai_tool_confirm_expiration_hours": -1}
             )
 
+    def test_duplicate_request(self):
+        """The same call again, while pending, returns the pending request."""
+        first = self._call_post_message(self.requester)
+        second = self.post_message.with_user(self.requester)._execute_tool(
+            record=self.partner.with_user(self.requester), message="Hello AI"
+        )
+        self.assertEqual(first["request_id"], second["request_id"])
+        self.assertEqual(len(self.Request.search([])), 1)
+        self.assertEqual(len(self._request(first).activity_ids), 1)
+        # Another call is another request
+        other = self.post_message.with_user(self.requester)._execute_tool(
+            message="Something else", record=self.partner.with_user(self.requester)
+        )
+        self.assertNotEqual(other["request_id"], first["request_id"])
+        # The order of the arguments does not matter
+        tool = self.post_message.with_user(self.requester)
+        partner = self.partner.with_user(self.requester)
+        third = tool._execute_tool(
+            message="Hi", user_id=self.other_user.id, record=partner
+        )
+        fourth = tool._execute_tool(
+            user_id=self.other_user.id, message="Hi", record=partner
+        )
+        self.assertEqual(third["request_id"], fourth["request_id"])
+
+    def test_duplicate_of_answered_or_expired_request(self):
+        now = fields.Datetime.now()
+        with freeze_time(now):
+            first = self._call_post_message(
+                self.requester, ai_tool_confirm_expiration_hours=1
+            )
+        with freeze_time(now + timedelta(hours=2)):
+            # The first one has expired: a new request
+            second = self._call_post_message(self.requester)
+            self.assertNotEqual(first["request_id"], second["request_id"])
+            # The second one has been answered: a new request
+            self._request(second, self.requester).action_reject()
+            third = self._call_post_message(self.requester)
+        self.assertNotIn(
+            third["request_id"], (first["request_id"], second["request_id"])
+        )
+
     def test_audit_note_without_write_access(self):
         """The audit trail does not depend on whether the approver can post
         on the record: a user who can only read it still leaves the note."""
