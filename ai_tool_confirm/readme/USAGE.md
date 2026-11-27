@@ -11,8 +11,8 @@ executed. Instead:
    can **Approve** it, and the tool runs with their access rights, or
    **Reject** it. Either way, the answer is logged on the chatter of the
    record of the request.
-4. Every document (model with a chatter) created by an approved action says
-   so in its chatter.
+4. Every document (model with a chatter) created or modified by an approved
+   action says so in its chatter: the AI proposes, the user disposes.
 
 **Who approves.** Whoever executes the tool: the user it runs as or, when code
 runs it as OdooBot within a web request, the user of that request. When no
@@ -41,8 +41,13 @@ wrote them) and it runs with the rights of whoever opens the request, an
 administrator included: never use them to pick a model, a method or a field.
 
 **What the records say.** A created document gets an internal note naming who
-requested and who approved the action, with a link to the request. The request
-lists these documents in its *Affected Records* tab.
+requested and who approved the action, with a link to the request. A modified
+document gets a single message with the same text and its changes: Odoo's own
+tracking message when it logs one, also naming the changed fields it does not
+track, or else a note of its own. When Odoo sends that tracking message to
+external followers (customers), it only says "Proposed by an AI and approved by
+...", and the internal details go in a separate internal note. The request lists
+these documents in its *Affected Records* tab.
 
 **Where the requests are.** In *Settings > Technical > AI > AI Tool Requests*.
 A scheduled action marks the requests past their expiration date as expired.

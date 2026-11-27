@@ -6,7 +6,7 @@ from odoo import api, fields, models
 
 class AiToolRequestRecord(models.Model):
     _name = "ai.tool.request.record"
-    _description = "Record created by an AI tool request"
+    _description = "Record created or modified by an AI tool request"
     _order = "id"
 
     # Security: as the request, readonly and without write or create access
@@ -15,7 +15,7 @@ class AiToolRequestRecord(models.Model):
         "ai.tool.request", required=True, readonly=True, index=True, ondelete="cascade"
     )
     operation = fields.Selection(
-        [("create", "Created")],
+        [("create", "Created"), ("write", "Modified")],
         required=True,
         readonly=True,
     )

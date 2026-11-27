@@ -390,11 +390,12 @@ executes tools (<tt class="docutils literal">ai_connection</tt>, MCP servers, �
 <ul class="simple">
 <li><a class="reference internal" href="#configuration" id="toc-entry-1">Configuration</a></li>
 <li><a class="reference internal" href="#usage" id="toc-entry-2">Usage</a></li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-3">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-4">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-5">Authors</a></li>
-<li><a class="reference internal" href="#contributors" id="toc-entry-6">Contributors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-7">Maintainers</a></li>
+<li><a class="reference internal" href="#known-issues-roadmap" id="toc-entry-3">Known issues / Roadmap</a></li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-4">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-5">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-6">Authors</a></li>
+<li><a class="reference internal" href="#contributors" id="toc-entry-7">Contributors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-8">Maintainers</a></li>
 </ul>
 </li>
 </ul>
@@ -440,8 +441,9 @@ tool output, so it can tell the user.</li>
 they can <strong>Approve</strong> it, and the tool runs with their access rights,
 or <strong>Reject</strong> it. Either way, the answer is logged on the chatter of
 the record of the request.</li>
-<li>Every document (model with a chatter) created by an approved action
-says so in its chatter.</li>
+<li>Every document (model with a chatter) created or modified by an
+approved action says so in its chatter: the AI proposes, the user
+disposes.</li>
 </ol>
 <p><strong>Who approves.</strong> Whoever executes the tool: the user it runs as or,
 when code runs it as OdooBot within a web request, the user of that
@@ -470,8 +472,13 @@ the request, an administrator included: never use them to pick a model,
 a method or a field.</p>
 <p><strong>What the records say.</strong> A created document gets an internal note
 naming who requested and who approved the action, with a link to the
-request. The request lists these documents in its <em>Affected Records</em>
-tab.</p>
+request. A modified document gets a single message with the same text
+and its changes: Odoo’s own tracking message when it logs one, also
+naming the changed fields it does not track, or else a note of its own.
+When Odoo sends that tracking message to external followers (customers),
+it only says “Proposed by an AI and approved by …”, and the internal
+details go in a separate internal note. The request lists these
+documents in its <em>Affected Records</em> tab.</p>
 <p><strong>Where the requests are.</strong> In <em>Settings &gt; Technical &gt; AI &gt; AI Tool
 Requests</em>. A scheduled action marks the requests past their expiration
 date as expired.</p>
@@ -518,8 +525,30 @@ flooded.</li>
 methods of its choice: both would skip the confirmation.</li>
 </ul>
 </div>
+<div class="section" id="known-issues-roadmap">
+<h2><a class="toc-backref" href="#toc-entry-3">Known issues / Roadmap</a></h2>
+<ul class="simple">
+<li>Approval by any member of a group, for requests no person asked for
+(e.g. contacts created from incoming emails), instead of a single
+approver.</li>
+<li>Approve or reject several requests at once from the list, keeping
+every check of a single answer.</li>
+<li>An optional “Approver” policy per tool (requesting user, record
+responsible, group), set by the administrator.</li>
+<li>The audit trail only covers documents with a chatter
+(<tt class="docutils literal">mail.thread</tt>): lines and technical records created or modified by
+an approved action are not listed.</li>
+<li>Argument names are resolved to record names only when a model of the
+call has a relational field with the same name: other ids are shown as
+they are, unless the tool describes its calls with a <tt class="docutils literal">_describe</tt>
+method.</li>
+<li><tt class="docutils literal">_describe</tt> methods must only read data, but this is not enforced:
+rolling back a savepoint would also drop the pending tracking of the
+transaction.</li>
+</ul>
+</div>
 <div class="section" id="bug-tracker">
-<h2><a class="toc-backref" href="#toc-entry-3">Bug Tracker</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-4">Bug Tracker</a></h2>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/OCA/ai/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -527,15 +556,15 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h2><a class="toc-backref" href="#toc-entry-4">Credits</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-5">Credits</a></h2>
 <div class="section" id="authors">
-<h3><a class="toc-backref" href="#toc-entry-5">Authors</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-6">Authors</a></h3>
 <ul class="simple">
 <li>Coopdevs</li>
 </ul>
 </div>
 <div class="section" id="contributors">
-<h3><a class="toc-backref" href="#toc-entry-6">Contributors</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-7">Contributors</a></h3>
 <ul class="simple">
 <li><a class="reference external" href="https://coopdevs.coop">Coopdevs</a><ul>
 <li>Quim Rebull</li>
@@ -544,7 +573,7 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h3><a class="toc-backref" href="#toc-entry-7">Maintainers</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-8">Maintainers</a></h3>
 <p>This module is maintained by the OCA.</p>
 <a class="reference external image-reference" href="https://odoo-community.org">
 <img alt="Odoo Community Association" src="https://odoo-community.org/logo.png" />

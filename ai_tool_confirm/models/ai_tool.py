@@ -20,8 +20,8 @@ approved_tool = ContextVar("ai_tool_confirm_approved_tool", default=None)
 # or an LLM could approve its own actions.
 running_tool = ContextVar("ai_tool_confirm_running_tool", default=False)
 # The approved request being executed right now (an ApprovedExecution).
-# Audit: records created meanwhile are linked to it and say so in their
-# chatter.
+# Audit: records created or modified meanwhile are linked to it and say so in
+# their chatter.
 executing_request = ContextVar("ai_tool_confirm_executing_request", default=None)
 
 
@@ -30,8 +30,12 @@ class ApprovedExecution:
 
     def __init__(self, request):
         # The request in the environment of its approver, whatever the
-        # environment the tool creates records in.
+        # environment the tool creates or modifies records in.
         self.request = request
+        # {(model, id)} of the records created
+        self.created = set()
+        # {(model, id): {field: value before the first write}}
+        self.initial_values = {}
 
 
 class AiTool(models.Model):

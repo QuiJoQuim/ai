@@ -92,8 +92,9 @@ is not executed. Instead:
    they can **Approve** it, and the tool runs with their access rights,
    or **Reject** it. Either way, the answer is logged on the chatter of
    the record of the request.
-4. Every document (model with a chatter) created by an approved action
-   says so in its chatter.
+4. Every document (model with a chatter) created or modified by an
+   approved action says so in its chatter: the AI proposes, the user
+   disposes.
 
 **Who approves.** Whoever executes the tool: the user it runs as or,
 when code runs it as OdooBot within a web request, the user of that
@@ -126,8 +127,13 @@ a method or a field.
 
 **What the records say.** A created document gets an internal note
 naming who requested and who approved the action, with a link to the
-request. The request lists these documents in its *Affected Records*
-tab.
+request. A modified document gets a single message with the same text
+and its changes: Odoo's own tracking message when it logs one, also
+naming the changed fields it does not track, or else a note of its own.
+When Odoo sends that tracking message to external followers (customers),
+it only says "Proposed by an AI and approved by ...", and the internal
+details go in a separate internal note. The request lists these
+documents in its *Affected Records* tab.
 
 **Where the requests are.** In *Settings > Technical > AI > AI Tool
 Requests*. A scheduled action marks the requests past their expiration
@@ -174,6 +180,27 @@ date as expired.
 - Integrations must execute tools through ``_execute_tool`` (as
   ``ai_connection`` and MCP servers do), and must never let an LLM call
   methods of its choice: both would skip the confirmation.
+
+Known issues / Roadmap
+======================
+
+- Approval by any member of a group, for requests no person asked for
+  (e.g. contacts created from incoming emails), instead of a single
+  approver.
+- Approve or reject several requests at once from the list, keeping
+  every check of a single answer.
+- An optional "Approver" policy per tool (requesting user, record
+  responsible, group), set by the administrator.
+- The audit trail only covers documents with a chatter
+  (``mail.thread``): lines and technical records created or modified by
+  an approved action are not listed.
+- Argument names are resolved to record names only when a model of the
+  call has a relational field with the same name: other ids are shown as
+  they are, unless the tool describes its calls with a ``_describe``
+  method.
+- ``_describe`` methods must only read data, but this is not enforced:
+  rolling back a savepoint would also drop the pending tracking of the
+  transaction.
 
 Bug Tracker
 ===========

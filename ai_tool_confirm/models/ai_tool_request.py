@@ -111,7 +111,7 @@ class AiToolRequest(models.Model):
         "request_id",
         string="Affected Records",
         readonly=True,
-        help="Documents created by the action once approved.",
+        help="Documents created or modified by the action once approved.",
     )
     can_answer = fields.Boolean(compute="_compute_can_answer")
 
@@ -547,6 +547,7 @@ class AiToolRequest(models.Model):
         # confirmation.
         token = approved_tool.set(tool.id)
         execution = ApprovedExecution(self)
+        modified = set()
         request_token = executing_request.set(execution)
         try:
             if not tool:
@@ -572,6 +573,7 @@ class AiToolRequest(models.Model):
             # fails its trace is undone with it.
             with self.env.cr.savepoint():
                 result = tool._execute_tool(record=record, **arguments)
+                modified = self._log_modified_records(execution)
         except Exception as e:
             _logger.info("AI tool request %s failed: %s", self.id, e)
             vals.update({"state": "error", "error": str(e)})
@@ -588,7 +590,10 @@ class AiToolRequest(models.Model):
             executing_request.reset(request_token)
         self._write_answer(vals)
         self._close_activity()
-        self._post_on_record(message)
+        # The context record already says it was modified by this request:
+        # one message is enough.
+        if vals["state"] == "error" or (self.res_model, self.res_id) not in modified:
+            self._post_on_record(message)
 
     def _close_activity(self):
         # No sudo: the activity is the approver's, and the request accepts
@@ -661,6 +666,86 @@ class AiToolRequest(models.Model):
         record = self.env[model].browse(res_id)
         if hasattr(record, "_message_log"):
             record._message_log(body=body, author_id=author.partner_id.id)
+
+    def _log_modified_records(self, execution):
+        """Audit: link the documents modified by this approved request to it,
+        and say so in their chatter, in a single message per document. The
+        AI proposes, the user disposes.
+
+        Odoo already logs the changes of tracked fields in one message:
+        this text becomes its body. Changes it does not log (untracked
+        fields, or tracking disabled) are named in it too; if Odoo logs
+        nothing, the message is posted here.
+
+        :return: {(model, id)} of the documents really modified
+        """
+        self.ensure_one()
+        modified = set()
+        for (model, res_id), initial in execution.initial_values.items():
+            if (model, res_id) in execution.created:
+                continue
+            # Security: sudo, because the action may leave the approver
+            # unable to read the record (e.g. assigned to someone else, under
+            # a "my records only" rule), and failing here would undo the
+            # action. These values are only compared, never shown: the audit
+            # only names the fields that changed.
+            record = self.env[model].sudo().browse(res_id).exists()
+            if not record:
+                continue
+            changed = [fname for fname, old in initial.items() if record[fname] != old]
+            if not changed:
+                continue
+            modified.add((model, res_id))
+            self._create_audit_lines(
+                [{"operation": "write", "res_model": model, "res_id": res_id}]
+            )
+            body = self._get_audit_body(
+                self.env._(
+                    "Proposed by an AI and approved by %(approver)s, "
+                    "requested by %(requester)s: %(request)s"
+                )
+            )
+            # Fields Odoo will log by itself at commit. Not all the tracked
+            # ones: tracking may be disabled (tracking_disable, mail_notrack)
+            # and then the AI text would be lost with it.
+            pending = self.env.cr.precommit.data.get(f"mail.tracking.{model}", {}).get(
+                res_id
+            )
+            natively_logged = set(pending or ()).intersection(changed)
+            others = [fname for fname in changed if fname not in natively_logged]
+            if others:
+                labels = ", ".join(
+                    record._fields[fname]._description_string(self.env)
+                    for fname in others
+                )
+                body += Markup("<br/>") + self.env._("Also changed: %s", labels)
+            if natively_logged and self._is_public_tracking(
+                record, {fname: initial[fname] for fname in natively_logged}
+            ):
+                # Odoo will send its tracking message to the followers,
+                # customers included: say who approved it, in plain words
+                # meant for them, without internal details; those go in an
+                # internal note, if any.
+                record._track_set_log_message(
+                    Markup(self.env._("Proposed by an AI and approved by %s"))
+                    % self.approver_id.name
+                )
+                if others:
+                    self._log_audit_note(model, res_id, body, self.approver_id)
+            elif natively_logged:
+                record._track_set_log_message(body)
+            else:
+                self._log_audit_note(model, res_id, body, self.approver_id)
+        return modified
+
+    @api.model
+    def _is_public_tracking(self, record, initial_values):
+        """Whether Odoo will post the tracking message of these changes with
+        a public subtype, so that it reaches external followers too."""
+        subtype = record._track_subtype(initial_values)
+        if isinstance(subtype, str):
+            subtype = self.env.ref(subtype, raise_if_not_found=False)
+        return bool(subtype) and not subtype.internal
 
     # Expiration
 

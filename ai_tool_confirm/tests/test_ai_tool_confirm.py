@@ -5,6 +5,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from freezegun import freeze_time
+from odoo_test_helper import FakeModelLoader
 
 from odoo import fields
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -240,6 +241,186 @@ class TestAiToolConfirm(AiToolConfirmCase):
             self.env["res.partner"].search([("name", "=", "AI Failing Contact")])
         )
         self.assertFalse(request.record_ids)
+
+    def _flush_tracking(self):
+        """Odoo logs tracked changes when the transaction is committed."""
+        self.env.flush_all()
+        self.env.cr.precommit.run()
+
+    def _ai_messages(self, record):
+        return record.message_ids.filtered(
+            lambda m: "Proposed by an AI" in (m.body or "")
+        )
+
+    def _update_contacts_tool(self):
+        """A tool that modifies its record (a tracked and an untracked field)
+        and another record (an untracked field only)."""
+        other = self.env["res.partner"].create({"name": "AI Other Partner"})
+
+        def _ai_update_contacts(tool, record=None, email=None, fail=False):
+            record.write({"email": email})
+            record.write({"function": "AI Job"})
+            record.write({"function": "AI Job"})  # No real change: same message
+            other.with_env(tool.env).write({"function": "AI Job"})
+            other.with_env(tool.env).write({"comment": other.comment})  # Unchanged
+            if fail:
+                raise ValueError("Failing after the changes")
+            return {}
+
+        self.startPatcher(
+            patch.object(
+                type(self.env["ai.tool"]),
+                "_ai_update_contacts",
+                _ai_update_contacts,
+                create=True,
+            )
+        )
+        tool = self.env["ai.tool"].create(
+            {
+                "name": "update_contacts",
+                "model_id": self.env.ref("ai_tool.model_ai_tool").id,
+                "function_name": "_ai_update_contacts",
+                "kind": "generic_model",
+            }
+        )
+        return tool, other
+
+    def test_approve_modifies_records(self):
+        """The AI proposes, the user disposes: each modified document gets a
+        single message saying so, with its changes."""
+        # Odoo's tracking, disabled by default in these tests
+        self.env = self.env(
+            context=dict(self.env.context, tracking_disable=False, mail_notrack=False)
+        )
+        self.partner = self.partner.with_env(self.env)
+        self.Request = self.Request.with_env(self.env)
+        tool, other = self._update_contacts_tool()
+        self._flush_tracking()
+        before = self.partner.message_ids | other.message_ids
+        result = tool.with_user(self.requester)._execute_tool(
+            email="ai@example.com", record=self.partner.with_user(self.requester)
+        )
+        request = self._request(result, self.requester)
+        request.action_approve()
+        self._flush_tracking()
+        self.assertEqual(request.state, "done", request.error)
+        # The record of the request: Odoo's own tracking message, with the AI
+        # text as body and the untracked field named in it
+        new_messages = self.partner.message_ids - before
+        self.assertEqual(len(new_messages), 1)
+        message = new_messages
+        self.assertIn("Proposed by an AI", message.body)
+        self.assertIn("Also changed: Job Position", message.body)
+        self.assertIn(f'data-oe-id="{request.id}"', message.body)
+        self.assertEqual(message.author_id, self.requester.partner_id)
+        self.assertEqual(message.tracking_value_ids.field_id.name, "email")
+        # Another record, only untracked fields changed: a note of its own
+        new_messages = other.message_ids - before
+        self.assertEqual(len(new_messages), 1)
+        self.assertIn("Proposed by an AI", new_messages.body)
+        self.assertIn("Also changed: Job Position", new_messages.body)
+        self.assertNotIn("Notes", new_messages.body)
+        # The request lists both
+        self.assertEqual(
+            sorted(request.record_ids.mapped(lambda r: (r.operation, r.res_id))),
+            sorted([("write", self.partner.id), ("write", other.id)]),
+        )
+
+    def test_modified_records_tracking_disabled(self):
+        """With Odoo's tracking disabled, the AI trace is not lost: a note of
+        its own names every changed field."""
+        tool, other = self._update_contacts_tool()
+        result = tool.with_user(self.requester)._execute_tool(
+            email="ai@example.com", record=self.partner.with_user(self.requester)
+        )
+        request = self._request(result, self.requester)
+        request.action_approve()
+        self._flush_tracking()
+        self.assertEqual(request.state, "done", request.error)
+        message = self._ai_messages(self.partner)
+        self.assertEqual(len(message), 1)
+        self.assertIn("Also changed: Email, Job Position", message.body)
+        self.assertFalse(message.tracking_value_ids)
+        self.assertFalse(self._partner_messages("approved and executed"))
+
+    def test_modified_records_undone_on_failure(self):
+        tool, other = self._update_contacts_tool()
+        self._flush_tracking()
+        result = tool.with_user(self.requester)._execute_tool(
+            email="ai@example.com",
+            fail=True,
+            record=self.partner.with_user(self.requester),
+        )
+        request = self._request(result, self.requester)
+        request.action_approve()
+        self._flush_tracking()
+        self.assertEqual(request.state, "error")
+        self.assertFalse(self.partner.email)
+        self.assertFalse(self._ai_messages(self.partner))
+        self.assertFalse(self._ai_messages(other))
+        self.assertFalse(request.record_ids)
+        self.assertTrue(self._partner_messages("but it failed"))
+
+    def test_created_then_modified(self):
+        """A record created and then modified by the same action only gets
+        the creation note."""
+        tool, executed = self._create_partner_tool()
+        Partner = type(self.env["res.partner"])
+        original_create = Partner.create
+
+        def create_and_write(records, vals_list):
+            new = original_create(records, vals_list)
+            new.write({"function": "AI Job"})
+            return new
+
+        with patch.object(Partner, "create", create_and_write):
+            result = tool.with_user(self.requester)._execute_tool(name="AI Twice")
+            request = self._request(result, self.requester)
+            request.action_approve()
+        self._flush_tracking()
+        new_partner = self.env["res.partner"].search([("name", "=", "AI Twice")])
+        self.assertEqual(new_partner.function, "AI Job")
+        self.assertFalse(self._ai_messages(new_partner))
+        self.assertEqual(request.record_ids.operation, "create")
+
+    def test_public_tracking_message(self):
+        """When Odoo sends the tracking message to external followers, it
+        only says who approved it; internal details go in an internal note."""
+        self.env = self.env(
+            context=dict(self.env.context, tracking_disable=False, mail_notrack=False)
+        )
+        self.partner = self.partner.with_env(self.env)
+        self.Request = self.Request.with_env(self.env)
+        tool, other = self._update_contacts_tool()
+        self._flush_tracking()
+        before = self.partner.message_ids
+        public_subtype = self.env.ref("mail.mt_comment")
+        self.assertFalse(public_subtype.internal)
+        with patch.object(
+            type(self.partner), "_track_subtype", return_value=public_subtype
+        ):
+            result = tool.with_user(self.requester)._execute_tool(
+                email="ai@example.com", record=self.partner.with_user(self.requester)
+            )
+            request = self._request(result, self.requester)
+            request.action_approve()
+            self._flush_tracking()
+        self.assertEqual(request.state, "done", request.error)
+        new_messages = self.partner.message_ids - before
+        public = new_messages.filtered(lambda m: m.subtype_id == public_subtype)
+        self.assertEqual(len(public), 1)
+        self.assertIn(
+            f"Proposed by an AI and approved by {self.requester.name}", public.body
+        )
+        self.assertNotIn("requested by", public.body)
+        self.assertNotIn("data-oe-id", public.body)
+        self.assertNotIn("Also changed", public.body)
+        self.assertTrue(public.tracking_value_ids)
+        note = new_messages - public
+        self.assertEqual(len(note), 1)
+        self.assertTrue(note.subtype_id.internal)
+        self.assertIn("Also changed: Job Position", note.body)
+        self.assertIn(f'data-oe-id="{request.id}"', note.body)
 
     def test_approval_is_single_use(self):
         """If the approved tool runs an LLM that calls it again, that call
@@ -684,3 +865,96 @@ class TestAiToolConfirmSession(AiToolConfirmCase):
         with self.assertRaises(AccessError):
             request.action_reject()
         self.assertEqual(request.state, "pending")
+
+
+class TestAiToolConfirmFakeDocument(AiToolConfirmCase):
+    """Cases that need a document whose write does not read it back
+    (res.partner does)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.loader = FakeModelLoader(cls.env, cls.__module__)
+        cls.loader.backup_registry()
+        from .fake_models import AiToolConfirmFakeDocument
+
+        cls.loader.update_registry((AiToolConfirmFakeDocument,))
+        cls.addClassCleanup(cls.loader.restore_registry)
+        cls.Request = cls.env["ai.tool.request"]
+        cls.startClassPatcher(
+            patch.object(
+                type(cls.Request), "_is_interactive_session", return_value=True
+            )
+        )
+        cls.env["ir.model.access"].create(
+            {
+                "name": "Fake document",
+                "model_id": cls.env["ir.model"]._get_id(
+                    "ai.tool.confirm.fake.document"
+                ),
+                "group_id": cls.env.ref("base.group_user").id,
+                "perm_read": True,
+                "perm_write": True,
+                "perm_create": True,
+                "perm_unlink": True,
+            }
+        )
+        cls.document = cls.env["ai.tool.confirm.fake.document"].create(
+            {"name": "AI Document"}
+        )
+
+    def test_audit_when_approver_loses_access(self):
+        """The action assigns the document to someone else and, under a "my
+        documents only" rule, the approver can no longer read it: the action
+        and its audit still work."""
+        group = self.env["res.groups"].create({"name": "AI Own Documents"})
+        self.requester.groups_id |= group
+        self.env["ir.rule"].create(
+            {
+                "name": "Own documents only",
+                "model_id": self.env["ir.model"]._get_id(
+                    "ai.tool.confirm.fake.document"
+                ),
+                "groups": [(4, group.id)],
+                "domain_force": "[('user_id', 'in', [user.id, False])]",
+                "perm_read": True,
+                "perm_write": False,
+                "perm_create": False,
+                "perm_unlink": False,
+            }
+        )
+
+        def _ai_assign(tool, record=None, user_id=None):
+            record.write({"user_id": user_id})
+            # As code using SQL does: the audit cannot rely on the cache
+            record.env.invalidate_all()
+            return {}
+
+        self.startPatcher(
+            patch.object(
+                type(self.env["ai.tool"]), "_ai_assign", _ai_assign, create=True
+            )
+        )
+        tool = self.env["ai.tool"].create(
+            {
+                "name": "assign",
+                "model_id": self.env.ref("ai_tool.model_ai_tool").id,
+                "function_name": "_ai_assign",
+                "kind": "generic_model",
+            }
+        )
+        result = tool.with_user(self.requester)._execute_tool(
+            user_id=self.other_user.id,
+            record=self.document.with_user(self.requester),
+        )
+        request = self._request(result, self.requester)
+        request.action_approve()
+        self.assertEqual(request.state, "done", request.error)
+        self.assertEqual(self.document.user_id, self.other_user)
+        self.assertFalse(self.document.with_user(self.requester).has_access("read"))
+        self.assertEqual(request.record_ids.operation, "write")
+        self.assertTrue(
+            self.document.message_ids.filtered(
+                lambda m: "Proposed by an AI" in (m.body or "")
+            )
+        )
