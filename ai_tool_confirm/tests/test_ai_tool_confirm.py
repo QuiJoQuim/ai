@@ -413,6 +413,29 @@ class TestAiToolConfirm(AiToolConfirmCase):
         with self.assertRaises(UserError):
             self._call_post_message()
 
+    def test_superuser_in_web_request_of_internal_user(self):
+        """Code running the tool as OdooBot within the web request of an
+        internal user: that user executes it, and approves it."""
+        self.partner.user_id = self.other_user
+        with patch.object(
+            type(self.Request), "_get_web_user", return_value=self.requester
+        ):
+            request = self._request(self._call_post_message())
+        self.assertEqual(request.approver_id, self.requester)
+
+    def test_superuser_in_web_request_of_external_user(self):
+        """A website chatbot running the tool as OdooBot for a visitor or a
+        portal user: refused, not sent to an internal user."""
+        self.partner.user_id = self.other_user
+        portal = new_test_user(self.env, "ai_portal2", groups="base.group_portal")
+        for web_user in (self.env.ref("base.public_user"), portal):
+            with patch.object(
+                type(self.Request), "_get_web_user", return_value=web_user
+            ):
+                with self.assertRaises(AccessError):
+                    self._call_post_message()
+        self.assertFalse(self.Request.search([]))
+
     def test_invalid_expiration_setting(self):
         with self.assertRaises(ValidationError):
             self.env["res.config.settings"].create(

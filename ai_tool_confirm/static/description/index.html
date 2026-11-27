@@ -437,10 +437,11 @@ they can <strong>Approve</strong> it, and the tool runs with their access rights
 or <strong>Reject</strong> it. Either way, the answer is logged on the chatter of
 the record of the request.</li>
 </ol>
-<p><strong>Who approves.</strong> Whoever executes the tool: the user it runs as. When
-no person is behind (code running it as OdooBot: scheduled actions, job
-queues, webhooks), the responsible user of the record (its <tt class="docutils literal">user_id</tt>
-field), or else the fallback approver.</p>
+<p><strong>Who approves.</strong> Whoever executes the tool: the user it runs as or,
+when code runs it as OdooBot within a web request, the user of that
+request. When no person is behind (scheduled actions, job queues,
+webhooks), the responsible user of the record (its <tt class="docutils literal">user_id</tt> field),
+or else the fallback approver.</p>
 <p><strong>Where the requests are.</strong> In <em>Settings &gt; Technical &gt; AI &gt; AI Tool
 Requests</em>. A scheduled action marks the requests past their expiration
 date as expired.</p>
@@ -458,8 +459,9 @@ of the call) nor by the caller (the context). Otherwise a prompt
 injection could send the request to whoever suits it, and the action
 would run with their rights. Integrations acting on behalf of someone
 must execute the tool as that user.</li>
-<li>Only internal users can request AI actions: portal and public users
-cannot.</li>
+<li>Only internal users can request AI actions. Portal and public users
+cannot, neither directly nor through code running the tool as OdooBot
+for them (a website chatbot).</li>
 <li>The tool runs with the access rights of the approver, never as
 superuser, and in the company the request was made in.</li>
 <li>Requests can only be answered by their approver, from an Odoo web

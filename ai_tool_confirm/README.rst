@@ -89,10 +89,11 @@ is not executed. Instead:
    or **Reject** it. Either way, the answer is logged on the chatter of
    the record of the request.
 
-**Who approves.** Whoever executes the tool: the user it runs as. When
-no person is behind (code running it as OdooBot: scheduled actions, job
-queues, webhooks), the responsible user of the record (its ``user_id``
-field), or else the fallback approver.
+**Who approves.** Whoever executes the tool: the user it runs as or,
+when code runs it as OdooBot within a web request, the user of that
+request. When no person is behind (scheduled actions, job queues,
+webhooks), the responsible user of the record (its ``user_id`` field),
+or else the fallback approver.
 
 **Where the requests are.** In *Settings > Technical > AI > AI Tool
 Requests*. A scheduled action marks the requests past their expiration
@@ -112,8 +113,9 @@ date as expired.
   injection could send the request to whoever suits it, and the action
   would run with their rights. Integrations acting on behalf of someone
   must execute the tool as that user.
-- Only internal users can request AI actions: portal and public users
-  cannot.
+- Only internal users can request AI actions. Portal and public users
+  cannot, neither directly nor through code running the tool as OdooBot
+  for them (a website chatbot).
 - The tool runs with the access rights of the approver, never as
   superuser, and in the company the request was made in.
 - Requests can only be answered by their approver, from an Odoo web

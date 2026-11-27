@@ -184,15 +184,22 @@ class AiToolRequest(models.Model):
 
     @api.model
     def _get_approver(self, record=None):
-        """Whoever executes the tool approves it. Requests run as OdooBot,
-        with no person behind (scheduled actions, job queues, webhooks), go
-        to the responsible user of the record, or else to the configured
-        fallback approver."""
+        """Whoever executes the tool approves it: the user it runs as or,
+        when code runs it as OdooBot within a web request, the user of that
+        request. Requests with no person behind (scheduled actions, job
+        queues, webhooks) go to the responsible user of the record, or else
+        to the configured fallback approver."""
         user = self.env.user
+        if user._is_superuser():
+            # Code may run the tool as OdooBot within a web request (e.g.
+            # to post as OdooBot). Then whoever is behind that request is
+            # the one executing it, and the one who approves.
+            user = self._get_web_user() or user
         if not user._is_superuser():
-            # Security: portal and public users cannot make AI tool requests.
-            # Otherwise an external user could get an internal one to execute
-            # actions with internal access rights.
+            # Security: portal and public users cannot make AI tool requests,
+            # neither directly nor through code running as OdooBot for them
+            # (a website chatbot). Otherwise an external user could get an
+            # internal one to execute actions with internal access rights.
             if not self._is_valid_approver(user):
                 raise AccessError(
                     self.env._("Only internal users can request AI actions.")
@@ -218,6 +225,21 @@ class AiToolRequest(models.Model):
                 "is configured."
             )
         )
+
+    @api.model
+    def _get_web_user(self):
+        """The user of the web request being served, if any: the logged in
+        user, or the public user for anonymous visitors. None without a web
+        request, or for routes without authentication (auth="none": job
+        queues, webhooks), which are not people.
+
+        Security: it comes from the session, set by Odoo at login: neither
+        the LLM nor the browser can forge it.
+        """
+        env = http_request and getattr(http_request, "env", None)
+        if not env or not env.uid:
+            return None
+        return self.env["res.users"].browse(env.uid)
 
     @api.model
     def _get_expiration_date(self):
