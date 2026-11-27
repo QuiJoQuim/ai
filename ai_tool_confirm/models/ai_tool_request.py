@@ -37,6 +37,12 @@ class AiToolRequest(models.Model):
     tool_id = fields.Many2one("ai.tool", readonly=True, ondelete="set null")
     tool_name = fields.Char(required=True, readonly=True)
     tool_description = fields.Text(related="tool_id.description")
+    # Security: what the tool executed when the request was made. If a
+    # module update changes it, the request is not executed: its arguments
+    # were meant for the old one.
+    tool_function = fields.Char(readonly=True)
+    tool_model = fields.Char(readonly=True)
+    tool_kind = fields.Char(readonly=True)
     arguments = fields.Text(
         readonly=True, help="Arguments of the tool call, frozen as JSON."
     )
@@ -139,6 +145,9 @@ class AiToolRequest(models.Model):
                 "name": self._get_request_name(tool, record),
                 "tool_id": tool.id,
                 "tool_name": tool.name,
+                "tool_function": tool.function_name,
+                "tool_model": tool._get_model_name(),
+                "tool_kind": tool.kind,
                 "arguments": frozen_arguments,
                 "res_model": record._name if record else False,
                 "res_id": record.id if record else False,
@@ -324,6 +333,14 @@ class AiToolRequest(models.Model):
         try:
             if not tool:
                 raise UserError(self.env._("The AI tool no longer exists."))
+            if (
+                tool.function_name,
+                tool._get_model_name(),
+                tool.kind,
+            ) != (self.tool_function, self.tool_model, self.tool_kind):
+                raise UserError(
+                    self.env._("The AI tool has changed since the request was made.")
+                )
             if record is not None and not record:
                 raise UserError(self.env._("The record no longer exists."))
             with self.env.cr.savepoint():

@@ -157,6 +157,13 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(new_partner.create_uid, self.requester)
         self.assertIn(str(new_partner.id), request.result)
 
+    def test_tool_changed_since_request(self):
+        request = self._request(self._call_post_message(self.requester), self.requester)
+        self.post_message.function_name = "_ai_get_date"
+        request.action_approve()
+        self.assertEqual(request.state, "error")
+        self.assertIn("changed", request.error)
+
     def test_approver_context_defaults_ignored(self):
         """default_* keys of the approver's context do not fill the records
         the tool creates."""

@@ -77,9 +77,9 @@ Usage
 When an AI integration calls a tool that requires confirmation, the tool
 is not executed. Instead:
 
-1. An AI tool request is created. It freezes the call: the arguments and
-   the record. It also keeps the requester, the approver, the origin and
-   the expiration date.
+1. An AI tool request is created. It freezes the call: the arguments,
+   the record and the tool (function, model and kind). It also keeps the
+   requester, the approver, the origin and the expiration date.
 2. The caller (the LLM, the MCP client) receives a
    ``{"status": "pending_confirmation", ...}`` result instead of the
    tool output, so it can tell the user.
@@ -119,8 +119,10 @@ date as expired.
   session: not through XML-RPC/JSON-RPC (API keys, scripts, agents
   holding the user's credentials) and never from inside an AI tool, so
   an AI cannot approve its own actions.
-- Nobody can edit a request once made. Administrators can only change
-  the *Human Confirmation* of a tool, not what the tool executes.
+- Nobody can edit a request once made. If a module update changes what
+  the tool executes, the request fails instead of running something
+  else. Administrators can only change the *Human Confirmation* of a
+  tool, not what the tool executes.
 - The record is not frozen: it may change between the request and its
   approval, and the arguments were proposed for its state at request
   time. Check the record before approving a request that has waited for

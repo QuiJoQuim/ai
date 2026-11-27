@@ -73,6 +73,15 @@ class AiTool(models.Model):
         finally:
             running_tool.reset(token)
 
+    def _get_model_name(self):
+        """Technical name of the model of the tool.
+
+        Security: sudo, because users cannot read ir.model. It only reads
+        metadata (a model name), not data.
+        """
+        self.ensure_one()
+        return self.sudo().model_id.model
+
     def _request_confirmation(self, args, kwargs, record):
         """Instead of executing the tool, ask a human to confirm the call."""
         self.ensure_one()
