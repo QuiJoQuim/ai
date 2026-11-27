@@ -19,6 +19,19 @@ approved_tool = ContextVar("ai_tool_confirm_approved_tool", default=None)
 # True while any AI tool is running: an AI tool must never answer a request,
 # or an LLM could approve its own actions.
 running_tool = ContextVar("ai_tool_confirm_running_tool", default=False)
+# The approved request being executed right now (an ApprovedExecution).
+# Audit: records created meanwhile are linked to it and say so in their
+# chatter.
+executing_request = ContextVar("ai_tool_confirm_executing_request", default=None)
+
+
+class ApprovedExecution:
+    """What an approved request does while it runs, for the audit trail."""
+
+    def __init__(self, request):
+        # The request in the environment of its approver, whatever the
+        # environment the tool creates records in.
+        self.request = request
 
 
 class AiTool(models.Model):

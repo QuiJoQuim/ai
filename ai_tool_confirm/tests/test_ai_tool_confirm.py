@@ -213,6 +213,33 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(len(new_partner), 1)
         self.assertEqual(new_partner.create_uid, self.requester)
         self.assertIn(str(new_partner.id), request.result)
+        # Audit: the new record says it comes from an approved AI action...
+        note = new_partner.message_ids.filtered(
+            lambda m: "Created by an AI action" in (m.body or "")
+        )
+        self.assertEqual(len(note), 1)
+        self.assertEqual(note.author_id, self.requester.partner_id)
+        self.assertIn(f'data-oe-id="{request.id}"', note.body)
+        # ... and the request lists it
+        self.assertEqual(request.record_ids.record_ref, new_partner)
+        self.assertEqual(request.record_ids.operation, "create")
+        # Record rules: only the requester and the approver see the list
+        RequestRecord = self.env["ai.tool.request.record"]
+        self.assertTrue(RequestRecord.with_user(self.requester).search([]))
+        self.assertFalse(RequestRecord.with_user(self.other_user).search([]))
+
+    def test_created_records_undone_on_failure(self):
+        tool, executed = self._create_partner_tool()
+        result = tool.with_user(self.requester)._execute_tool(
+            name="AI Failing Contact", fail=True
+        )
+        request = self._request(result, self.requester)
+        request.action_approve()
+        self.assertEqual(request.state, "error")
+        self.assertFalse(
+            self.env["res.partner"].search([("name", "=", "AI Failing Contact")])
+        )
+        self.assertFalse(request.record_ids)
 
     def test_approval_is_single_use(self):
         """If the approved tool runs an LLM that calls it again, that call
@@ -296,6 +323,23 @@ class TestAiToolConfirm(AiToolConfirmCase):
         new_partner = self.env["res.partner"].search([("name", "=", "AI Clean")])
         self.assertTrue(new_partner)
         self.assertFalse(new_partner.comment)
+
+    def test_created_records_outside_request(self):
+        """Records created by a tool that needs no confirmation, or by
+        anything else, are not marked."""
+        tool, executed = self._create_partner_tool()
+        tool.confirmation = "never"
+        tool.with_user(self.requester)._execute_tool(name="AI Direct Contact")
+        new_partner = self.env["res.partner"].search(
+            [("name", "=", "AI Direct Contact")]
+        )
+        self.assertTrue(new_partner)
+        self.assertFalse(
+            new_partner.message_ids.filtered(
+                lambda m: "Created by an AI action" in (m.body or "")
+            )
+        )
+        self.assertFalse(self.env["ai.tool.request.record"].search([]))
 
     def test_automation_without_record_goes_to_fallback(self):
         """With no person behind nor a record, only the fallback

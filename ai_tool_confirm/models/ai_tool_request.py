@@ -6,12 +6,19 @@ import logging
 import math
 from datetime import timedelta
 
+from markupsafe import Markup
+
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request as http_request
 from odoo.tools import SQL, clean_context
 
-from .ai_tool import approved_tool, running_tool
+from .ai_tool import (
+    ApprovedExecution,
+    approved_tool,
+    executing_request,
+    running_tool,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -99,6 +106,13 @@ class AiToolRequest(models.Model):
     answer_date = fields.Datetime(readonly=True)
     result = fields.Text(readonly=True)
     error = fields.Text(readonly=True)
+    record_ids = fields.One2many(
+        "ai.tool.request.record",
+        "request_id",
+        string="Affected Records",
+        readonly=True,
+        help="Documents created by the action once approved.",
+    )
     can_answer = fields.Boolean(compute="_compute_can_answer")
 
     @api.depends("arguments", "tool_id", "res_model", "res_id")
@@ -532,6 +546,8 @@ class AiToolRequest(models.Model):
         # Security: only this tool, and only during this call, skips the
         # confirmation.
         token = approved_tool.set(tool.id)
+        execution = ApprovedExecution(self)
+        request_token = executing_request.set(execution)
         try:
             if not tool:
                 raise UserError(self.env._("The AI tool no longer exists."))
@@ -552,6 +568,8 @@ class AiToolRequest(models.Model):
                 )
             if record is not None and not record:
                 raise UserError(self.env._("The record no longer exists."))
+            # Audit: logged inside the savepoint, so that if the action
+            # fails its trace is undone with it.
             with self.env.cr.savepoint():
                 result = tool._execute_tool(record=record, **arguments)
         except Exception as e:
@@ -567,6 +585,7 @@ class AiToolRequest(models.Model):
             )
         finally:
             approved_tool.reset(token)
+            executing_request.reset(request_token)
         self._write_answer(vals)
         self._close_activity()
         self._post_on_record(message)
@@ -589,6 +608,46 @@ class AiToolRequest(models.Model):
         self._log_audit_note(self.res_model, self.res_id, body, self.env.user)
 
     # Audit trail
+
+    def _get_audit_body(self, text):
+        # Security: Markup % escapes the user names; the request link comes
+        # from _get_html_link, which escapes its title.
+        return Markup(text) % {
+            "approver": self.approver_id.name,
+            "requester": self.requester_id.name,
+            "request": self._get_html_link(),
+        }
+
+    def _log_created_records(self, records):
+        """Audit: link the records created by this approved request to it,
+        and say so in their chatter. Runs inside the savepoint of the
+        execution: if the action fails, this is undone with the records."""
+        self.ensure_one()
+        self._create_audit_lines(
+            [
+                {"operation": "create", "res_model": rec._name, "res_id": rec.id}
+                for rec in records
+            ]
+        )
+        body = self._get_audit_body(
+            self.env._(
+                "Created by an AI action approved by %(approver)s, "
+                "requested by %(requester)s: %(request)s"
+            )
+        )
+        records.with_env(self.env)._message_log_batch(
+            dict.fromkeys(records.ids, body),
+            author_id=self.approver_id.partner_id.id,
+        )
+
+    def _create_audit_lines(self, vals_list):
+        # Security: sudo, because nobody can create audit lines directly: it
+        # is what keeps the audit trail from being forged. Only from the
+        # execution of an approved request.
+        self.ensure_one()
+        self.env["ai.tool.request.record"].sudo().create(
+            [dict(vals, request_id=self.id) for vals in vals_list]
+        )
 
     def _log_audit_note(self, model, res_id, body, author):
         """An internal note on a document, for the audit trail.

@@ -440,6 +440,8 @@ tool output, so it can tell the user.</li>
 they can <strong>Approve</strong> it, and the tool runs with their access rights,
 or <strong>Reject</strong> it. Either way, the answer is logged on the chatter of
 the record of the request.</li>
+<li>Every document (model with a chatter) created by an approved action
+says so in its chatter.</li>
 </ol>
 <p><strong>Who approves.</strong> Whoever executes the tool: the user it runs as or,
 when code runs it as OdooBot within a web request, the user of that
@@ -466,6 +468,10 @@ data: it runs every time the request is displayed. Its arguments are not
 trusted (an LLM wrote them) and it runs with the rights of whoever opens
 the request, an administrator included: never use them to pick a model,
 a method or a field.</p>
+<p><strong>What the records say.</strong> A created document gets an internal note
+naming who requested and who approved the action, with a link to the
+request. The request lists these documents in its <em>Affected Records</em>
+tab.</p>
 <p><strong>Where the requests are.</strong> In <em>Settings &gt; Technical &gt; AI &gt; AI Tool
 Requests</em>. A scheduled action marks the requests past their expiration
 date as expired.</p>

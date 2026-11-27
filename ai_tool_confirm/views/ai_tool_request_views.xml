@@ -73,6 +73,19 @@
                         <page string="Result" name="result" invisible="state != 'done'">
                             <field name="result" />
                         </page>
+                        <page
+                            string="Affected Records"
+                            name="affected_records"
+                            invisible="not record_ids"
+                        >
+                            <field name="record_ids">
+                                <list>
+                                    <field name="operation" />
+                                    <field name="record_ref" />
+                                    <field name="res_model" optional="hide" />
+                                </list>
+                            </field>
+                        </page>
                         <page string="Error" name="error" invisible="state != 'error'">
                             <field name="error" />
                         </page>

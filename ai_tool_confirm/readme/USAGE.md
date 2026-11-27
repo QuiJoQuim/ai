@@ -11,6 +11,8 @@ executed. Instead:
    can **Approve** it, and the tool runs with their access rights, or
    **Reject** it. Either way, the answer is logged on the chatter of the
    record of the request.
+4. Every document (model with a chatter) created by an approved action says
+   so in its chatter.
 
 **Who approves.** Whoever executes the tool: the user it runs as or, when code
 runs it as OdooBot within a web request, the user of that request. When no
@@ -37,6 +39,10 @@ It receives the same arguments as the tool function and must only read data: it
 runs every time the request is displayed. Its arguments are not trusted (an LLM
 wrote them) and it runs with the rights of whoever opens the request, an
 administrator included: never use them to pick a model, a method or a field.
+
+**What the records say.** A created document gets an internal note naming who
+requested and who approved the action, with a link to the request. The request
+lists these documents in its *Affected Records* tab.
 
 **Where the requests are.** In *Settings > Technical > AI > AI Tool Requests*.
 A scheduled action marks the requests past their expiration date as expired.
