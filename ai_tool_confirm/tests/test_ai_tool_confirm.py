@@ -413,6 +413,24 @@ class TestAiToolConfirm(AiToolConfirmCase):
         with self.assertRaises(UserError):
             self._call_post_message()
 
+    def test_automation_request_name_with_approver_rights(self):
+        """The name of the request is read with the approver's rights: a
+        record they cannot read only shows its model and id."""
+        self.env["ir.config_parameter"].set_param(
+            "ai_tool_confirm.fallback_approver_id", str(self.fallback.id)
+        )
+        self.env["ir.rule"].create(
+            {
+                "name": "Hide the partner",
+                "model_id": self.env.ref("base.model_res_partner").id,
+                "domain_force": f"[('id', '!=', {self.partner.id})]",
+            }
+        )
+        request = self._request(self._call_post_message())
+        self.assertEqual(request.approver_id, self.fallback)
+        self.assertEqual(request.name, f"post_message: Contact #{self.partner.id}")
+        self.assertNotIn("AI Partner", request.activity_ids.summary)
+
     def test_superuser_in_web_request_of_internal_user(self):
         """Code running the tool as OdooBot within the web request of an
         internal user: that user executes it, and approves it."""

@@ -145,7 +145,7 @@ class AiToolRequest(models.Model):
         # checks above.
         request = self.sudo().create(
             {
-                "name": self._get_request_name(tool, record),
+                "name": self._get_request_name(tool, record, approver),
                 "tool_id": tool.id,
                 "tool_name": tool.name,
                 "tool_function": tool.function_name,
@@ -171,10 +171,16 @@ class AiToolRequest(models.Model):
         return self.env["ir.config_parameter"].sudo().get_param(key, default)
 
     @api.model
-    def _get_request_name(self, tool, record):
+    def _get_request_name(self, tool, record, approver):
         if not record:
             return tool.name
-        return f"{tool.name}: {record.display_name}"
+        # Security: the name is shown to the approver (and in their activity):
+        # read it with their rights, never as superuser. Without access, the
+        # name of the model and the id only.
+        record = record.with_user(approver).sudo(False)
+        if record._filtered_access("read"):
+            return f"{tool.name}: {record.display_name}"
+        return f"{tool.name}: {record._description} #{record.id}"
 
     @api.model
     def _is_valid_approver(self, user):
