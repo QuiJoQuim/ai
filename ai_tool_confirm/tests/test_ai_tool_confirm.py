@@ -157,6 +157,17 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(new_partner.create_uid, self.requester)
         self.assertIn(str(new_partner.id), request.result)
 
+    def test_approver_context_defaults_ignored(self):
+        """default_* keys of the approver's context do not fill the records
+        the tool creates."""
+        tool, executed = self._create_partner_tool()
+        result = tool.with_user(self.requester)._execute_tool(name="AI Clean")
+        request = self._request(result, self.requester)
+        request.with_context(default_comment="Injected").action_approve()
+        new_partner = self.env["res.partner"].search([("name", "=", "AI Clean")])
+        self.assertTrue(new_partner)
+        self.assertFalse(new_partner.comment)
+
     def test_automation_without_record_goes_to_fallback(self):
         """With no person behind nor a record, only the fallback
         approver can confirm, and the record is created with their rights."""

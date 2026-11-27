@@ -9,7 +9,7 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request as http_request
-from odoo.tools import SQL
+from odoo.tools import SQL, clean_context
 
 from .ai_tool import approved_tool, running_tool
 
@@ -308,8 +308,10 @@ class AiToolRequest(models.Model):
         """Run the tool with the access rights of the approver."""
         self.ensure_one()
         # Security: never as superuser, even if this method is reached from
-        # a sudo() environment: the approver's own rights apply.
-        env = self.env(su=False)
+        # a sudo() environment: the approver's own rights apply. Without the
+        # default_* keys of the approver's web context: they would fill
+        # fields of the records the tool creates.
+        env = self.env(su=False, context=clean_context(self.env.context))
         tool = env["ai.tool"].browse(self.tool_id.id)
         record = None
         if self.res_model:
