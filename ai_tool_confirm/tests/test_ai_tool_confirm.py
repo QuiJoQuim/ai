@@ -374,6 +374,18 @@ class TestAiToolConfirm(AiToolConfirmCase):
         result = self.get_date.with_user(self.requester)._execute_tool()
         self.assertEqual(result["status"], "pending_confirmation")
 
+    def test_admin_only_changes_confirmation(self):
+        tool = self.post_message.with_user(self.admin)
+        tool.write({"confirmation": "always"})
+        self.assertEqual(self.post_message.confirmation, "always")
+        for vals in (
+            {"function_name": "unlink"},
+            {"read_only": True},
+            {"kind": "generic"},
+        ):
+            with self.assertRaises(AccessError):
+                tool.write(vals)
+
 
 class TestAiToolConfirmSession(AiToolConfirmCase):
     def test_answer_requires_web_session(self):

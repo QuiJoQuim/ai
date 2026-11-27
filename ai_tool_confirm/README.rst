@@ -119,7 +119,8 @@ date as expired.
   session: not through XML-RPC/JSON-RPC (API keys, scripts, agents
   holding the user's credentials) and never from inside an AI tool, so
   an AI cannot approve its own actions.
-- Nobody can edit a request once made.
+- Nobody can edit a request once made. Administrators can only change
+  the *Human Confirmation* of a tool, not what the tool executes.
 - The record is not frozen: it may change between the request and its
   approval, and the arguments were proposed for its state at request
   time. Check the record before approving a request that has waited for

@@ -1,9 +1,13 @@
 # Copyright 2026 Coopdevs
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import logging
 from contextvars import ContextVar
 
 from odoo import api, fields, models
+from odoo.exceptions import AccessError
+
+_logger = logging.getLogger(__name__)
 
 # Security: these flags live in context variables, not in the Odoo context.
 # The Odoo context travels with every RPC call, so any client could set a
@@ -41,6 +45,24 @@ class AiTool(models.Model):
                 tool.requires_confirmation = not tool.read_only
             else:
                 tool.requires_confirmation = tool.confirmation == "always"
+
+    def write(self, vals):
+        # Security: administrators get write access to decide on confirmation
+        # only. What a tool executes (model, function, kind, read-only flag)
+        # stays defined by code: data files are loaded as superuser.
+        if not self.env.su and set(vals) - {"confirmation"}:
+            raise AccessError(
+                self.env._("Only the human confirmation of AI tools can be changed.")
+            )
+        if "confirmation" in vals:
+            # Audit: disabling the confirmation of a tool must leave a trace
+            _logger.info(
+                "AI tools %s: human confirmation set to %r by user %s",
+                self.ids,
+                vals["confirmation"],
+                self.env.uid,
+            )
+        return super().write(vals)
 
     def _execute_tool(self, *args, record=None, **kwargs):
         token = running_tool.set(True)
