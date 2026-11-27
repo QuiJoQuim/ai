@@ -10,6 +10,7 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import new_test_user
 
+from odoo.addons.ai_tool_confirm.models.ai_tool import running_tool
 from odoo.addons.base.tests.common import BaseCommon
 
 
@@ -46,6 +47,17 @@ class AiToolConfirmCase(BaseCommon):
 
 
 class TestAiToolConfirm(AiToolConfirmCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Tests run without an HTTP request: act as if answers came from the
+        # web client. TestAiToolConfirmSession checks the real behaviour.
+        cls.startClassPatcher(
+            patch.object(
+                type(cls.Request), "_is_interactive_session", return_value=True
+            )
+        )
+
     def test_read_only_tool_is_executed(self):
         result = self.get_date.with_user(self.requester)._execute_tool()
         self.assertIn("date", result)
@@ -164,6 +176,23 @@ class TestAiToolConfirm(AiToolConfirmCase):
         with self.assertRaises(UserError):
             request.action_approve()
         self.assertEqual(request.state, "pending")
+
+    def test_ai_tool_cannot_answer(self):
+        """An AI tool able to call methods must not approve its own request."""
+        request = self._request(self._call_post_message(self.requester), self.requester)
+        token = running_tool.set(True)
+        try:
+            with self.assertRaises(AccessError):
+                request.action_approve()
+        finally:
+            running_tool.reset(token)
+        self.assertEqual(request.state, "pending")
+
+    def test_context_does_not_skip_confirmation(self):
+        """The Odoo context comes from RPC clients: it must not bypass."""
+        result = self._call_post_message(self.requester, ai_tool_confirm_execute=True)
+        self.assertEqual(result["status"], "pending_confirmation")
+        self.assertFalse(self._partner_messages("Hello AI"))
 
     def test_cannot_answer_twice(self):
         request = self._request(self._call_post_message(self.requester), self.requester)
@@ -317,3 +346,15 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.get_date.confirmation = "always"
         result = self.get_date.with_user(self.requester)._execute_tool()
         self.assertEqual(result["status"], "pending_confirmation")
+
+
+class TestAiToolConfirmSession(AiToolConfirmCase):
+    def test_answer_requires_web_session(self):
+        """Without a web session (XML-RPC, JSON-RPC with an API key, scripts)
+        requests cannot be answered."""
+        request = self._request(self._call_post_message(self.requester), self.requester)
+        with self.assertRaises(AccessError):
+            request.action_approve()
+        with self.assertRaises(AccessError):
+            request.action_reject()
+        self.assertEqual(request.state, "pending")

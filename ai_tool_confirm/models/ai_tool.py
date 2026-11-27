@@ -1,7 +1,20 @@
 # Copyright 2026 Coopdevs
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from contextvars import ContextVar
+
 from odoo import api, fields, models
+
+# Security: these flags live in context variables, not in the Odoo context.
+# The Odoo context travels with every RPC call, so any client could set a
+# context key; a context variable can only be set by server-side code.
+#
+# Id of the tool an approved request is executing right now: the only way to
+# run a tool that requires confirmation.
+approved_tool = ContextVar("ai_tool_confirm_approved_tool", default=None)
+# True while any AI tool is running: an AI tool must never answer a request,
+# or an LLM could approve its own actions.
+running_tool = ContextVar("ai_tool_confirm_running_tool", default=False)
 
 
 class AiTool(models.Model):
@@ -30,11 +43,13 @@ class AiTool(models.Model):
                 tool.requires_confirmation = tool.confirmation == "always"
 
     def _execute_tool(self, *args, record=None, **kwargs):
-        if not self.requires_confirmation or self.env.context.get(
-            "ai_tool_confirm_execute"
-        ):
+        token = running_tool.set(True)
+        try:
+            if self.requires_confirmation and approved_tool.get() != self.id:
+                return self._request_confirmation(args, kwargs, record)
             return super()._execute_tool(*args, record=record, **kwargs)
-        return self._request_confirmation(args, kwargs, record)
+        finally:
+            running_tool.reset(token)
 
     def _request_confirmation(self, args, kwargs, record):
         """Instead of executing the tool, ask a human to confirm the call."""

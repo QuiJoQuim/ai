@@ -460,7 +460,10 @@ must execute the tool as that user.</li>
 <li>Only internal users can request AI actions: portal and public users
 cannot.</li>
 <li>The tool runs with the access rights of the approver.</li>
-<li>Requests can only be answered by their approver.</li>
+<li>Requests can only be answered by their approver, from an Odoo web
+session: not through XML-RPC/JSON-RPC (API keys, scripts, agents
+holding the user’s credentials) and never from inside an AI tool, so
+an AI cannot approve its own actions.</li>
 <li>Nobody can edit a request once made.</li>
 <li>The record is not frozen: it may change between the request and its
 approval, and the arguments were proposed for its state at request

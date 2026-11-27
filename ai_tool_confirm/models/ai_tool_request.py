@@ -8,6 +8,9 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
+from odoo.http import request as http_request
+
+from .ai_tool import approved_tool, running_tool
 
 _logger = logging.getLogger(__name__)
 
@@ -244,7 +247,22 @@ class AiToolRequest(models.Model):
 
     # Answer
 
+    def _is_interactive_session(self):
+        # Security: answers must come from a person using the web client.
+        # XML-RPC and JSON-RPC calls (API keys, scripts, AI agents holding the
+        # user's credentials) have no authenticated web session, and Odoo does
+        # not open web sessions with API keys.
+        return bool(http_request) and http_request.session.uid == self.env.uid
+
     def _check_can_answer(self):
+        # Security: an AI tool must never answer a request. Otherwise an LLM
+        # with a tool able to call methods could approve its own actions.
+        if running_tool.get():
+            raise AccessError(self.env._("AI tools cannot answer AI tool requests."))
+        if not self._is_interactive_session():
+            raise AccessError(
+                self.env._("AI tool requests can only be answered from Odoo.")
+            )
         for request in self:
             if request.state != "pending":
                 raise UserError(
@@ -284,15 +302,16 @@ class AiToolRequest(models.Model):
             record = env[self.res_model].browse(self.res_id).exists()
         arguments = json.loads(self.arguments or "{}")
         vals = {"answer_date": fields.Datetime.now()}
+        # Security: only this tool, and only during this call, skips the
+        # confirmation.
+        token = approved_tool.set(tool.id)
         try:
             if not tool:
                 raise UserError(self.env._("The AI tool no longer exists."))
             if record is not None and not record:
                 raise UserError(self.env._("The record no longer exists."))
             with self.env.cr.savepoint():
-                result = tool.with_context(ai_tool_confirm_execute=True)._execute_tool(
-                    record=record, **arguments
-                )
+                result = tool._execute_tool(record=record, **arguments)
         except Exception as e:
             _logger.info("AI tool request %s failed: %s", self.id, e)
             vals.update({"state": "error", "error": str(e)})
@@ -304,6 +323,8 @@ class AiToolRequest(models.Model):
             message = self.env._(
                 "%(user)s approved and executed the AI action %(name)s."
             )
+        finally:
+            approved_tool.reset(token)
         self._write_answer(vals)
         self._close_activity()
         self._post_on_record(message)
