@@ -307,7 +307,9 @@ class AiToolRequest(models.Model):
     def _execute(self):
         """Run the tool with the access rights of the approver."""
         self.ensure_one()
-        env = self.env
+        # Security: never as superuser, even if this method is reached from
+        # a sudo() environment: the approver's own rights apply.
+        env = self.env(su=False)
         tool = env["ai.tool"].browse(self.tool_id.id)
         record = None
         if self.res_model:

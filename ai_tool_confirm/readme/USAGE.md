@@ -34,7 +34,7 @@ A scheduled action marks the requests past their expiration date as expired.
   request to whoever suits it, and the action would run with their rights.
   Integrations acting on behalf of someone must execute the tool as that user.
 - Only internal users can request AI actions: portal and public users cannot.
-- The tool runs with the access rights of the approver.
+- The tool runs with the access rights of the approver, never as superuser.
 - Requests can only be answered by their approver, from an Odoo web session:
   not through XML-RPC/JSON-RPC (API keys, scripts, agents holding the user's
   credentials) and never from inside an AI tool, so an AI cannot approve its

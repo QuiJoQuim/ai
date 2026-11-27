@@ -113,7 +113,8 @@ date as expired.
   must execute the tool as that user.
 - Only internal users can request AI actions: portal and public users
   cannot.
-- The tool runs with the access rights of the approver.
+- The tool runs with the access rights of the approver, never as
+  superuser.
 - Requests can only be answered by their approver, from an Odoo web
   session: not through XML-RPC/JSON-RPC (API keys, scripts, agents
   holding the user's credentials) and never from inside an AI tool, so

@@ -90,6 +90,22 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(message.create_uid, self.requester)
         self.assertTrue(self._partner_messages("approved and executed"))
 
+    def test_approve_never_as_superuser(self):
+        """Even when approving from a sudo() environment, the tool runs with
+        the rights of the approver."""
+        request = self._request(self._call_post_message(self.requester), self.requester)
+        executed_as_su = []
+        AiTool = type(self.env["ai.tool"])
+        with patch.object(
+            AiTool,
+            "_ai_post_message",
+            autospec=True,
+            side_effect=lambda tool, **kw: executed_as_su.append(tool.env.su) or {},
+        ):
+            request.sudo().action_approve()
+        self.assertEqual(executed_as_su, [False])
+        self.assertEqual(request.state, "done")
+
     def _create_partner_tool(self):
         """A generic tool (no record) that creates a new record."""
         executed = []
