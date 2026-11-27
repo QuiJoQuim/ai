@@ -43,6 +43,9 @@ class AiToolRequest(models.Model):
     tool_function = fields.Char(readonly=True)
     tool_model = fields.Char(readonly=True)
     tool_kind = fields.Char(readonly=True)
+    # Security: the action runs in the company it was requested in, not in
+    # whatever company the approver has active when approving.
+    company_id = fields.Many2one("res.company", readonly=True)
     arguments = fields.Text(
         readonly=True, help="Arguments of the tool call, frozen as JSON."
     )
@@ -148,6 +151,7 @@ class AiToolRequest(models.Model):
                 "tool_function": tool.function_name,
                 "tool_model": tool._get_model_name(),
                 "tool_kind": tool.kind,
+                "company_id": self.env.company.id,
                 "arguments": frozen_arguments,
                 "res_model": record._name if record else False,
                 "res_id": record.id if record else False,
@@ -321,6 +325,10 @@ class AiToolRequest(models.Model):
         # default_* keys of the approver's web context: they would fill
         # fields of the records the tool creates.
         env = self.env(su=False, context=clean_context(self.env.context))
+        if self.company_id:
+            env = env(
+                context=dict(env.context, allowed_company_ids=self.company_id.ids)
+            )
         tool = env["ai.tool"].browse(self.tool_id.id)
         record = None
         if self.res_model:
@@ -340,6 +348,13 @@ class AiToolRequest(models.Model):
             ) != (self.tool_function, self.tool_model, self.tool_kind):
                 raise UserError(
                     self.env._("The AI tool has changed since the request was made.")
+                )
+            if self.company_id and self.company_id not in self.env.user.company_ids:
+                raise UserError(
+                    self.env._(
+                        "You do not have access to the company where this "
+                        "action was requested."
+                    )
                 )
             if record is not None and not record:
                 raise UserError(self.env._("The record no longer exists."))

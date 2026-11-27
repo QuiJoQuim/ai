@@ -426,8 +426,9 @@ read-only.</li>
 is not executed. Instead:</p>
 <ol class="arabic simple">
 <li>An AI tool request is created. It freezes the call: the arguments,
-the record and the tool (function, model and kind). It also keeps the
-requester, the approver, the origin and the expiration date.</li>
+the record, the tool (function, model and kind) and the company. It
+also keeps the requester, the approver, the origin and the expiration
+date.</li>
 <li>The caller (the LLM, the MCP client) receives a
 <tt class="docutils literal">{&quot;status&quot;: &quot;pending_confirmation&quot;, <span class="pre">...}</span></tt> result instead of the
 tool output, so it can tell the user.</li>
@@ -460,7 +461,7 @@ must execute the tool as that user.</li>
 <li>Only internal users can request AI actions: portal and public users
 cannot.</li>
 <li>The tool runs with the access rights of the approver, never as
-superuser.</li>
+superuser, and in the company the request was made in.</li>
 <li>Requests can only be answered by their approver, from an Odoo web
 session: not through XML-RPC/JSON-RPC (API keys, scripts, agents
 holding the user’s credentials) and never from inside an AI tool, so

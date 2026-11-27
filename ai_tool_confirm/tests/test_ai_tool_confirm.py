@@ -164,6 +164,47 @@ class TestAiToolConfirm(AiToolConfirmCase):
         self.assertEqual(request.state, "error")
         self.assertIn("changed", request.error)
 
+    def test_runs_in_requested_company(self):
+        company_b = self.env["res.company"].create({"name": "AI Company B"})
+        self.requester.company_ids |= company_b
+        tool, executed = self._create_partner_tool()
+        companies = []
+        original = type(self.env["ai.tool"])._ai_create_partner
+
+        def record_company(tool_model, name=None, fail=False):
+            companies.append(tool_model.env.companies)
+            return original(tool_model, name=name, fail=fail)
+
+        result = (
+            tool.with_user(self.requester)
+            .with_company(company_b)
+            ._execute_tool(name="AI Company Contact")
+        )
+        request = self._request(result, self.requester)
+        self.assertEqual(request.company_id, company_b)
+        with patch.object(
+            type(self.env["ai.tool"]), "_ai_create_partner", record_company
+        ):
+            # Approved with another company active: it runs in company B only
+            request.with_company(self.env.company).action_approve()
+        self.assertEqual(request.state, "done", request.error)
+        self.assertEqual(companies, [company_b])
+
+    def test_approver_without_company_access(self):
+        company_b = self.env["res.company"].create({"name": "AI Company B"})
+        self.requester.company_ids |= company_b
+        result = (
+            self.post_message.with_user(self.requester)
+            .with_company(company_b)
+            ._execute_tool(message="Hello AI", record=self.partner)
+        )
+        request = self._request(result, self.requester)
+        self.requester.company_ids -= company_b
+        request.action_approve()
+        self.assertEqual(request.state, "error")
+        self.assertIn("You do not have access to the company", request.error)
+        self.assertFalse(self._partner_messages("Hello AI"))
+
     def test_approver_context_defaults_ignored(self):
         """default_* keys of the approver's context do not fill the records
         the tool creates."""
