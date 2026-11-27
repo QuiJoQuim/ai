@@ -9,6 +9,7 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request as http_request
+from odoo.tools import SQL
 
 from .ai_tool import approved_tool, running_tool
 
@@ -263,6 +264,17 @@ class AiToolRequest(models.Model):
             raise AccessError(
                 self.env._("AI tool requests can only be answered from Odoo.")
             )
+        # Security: lock the requests before checking their state, so two
+        # simultaneous answers cannot both see them pending and run the tool
+        # twice (the second one waits for a retry and finds them answered).
+        self.env.cr.execute(
+            SQL(
+                "SELECT id FROM %s WHERE id IN %s FOR UPDATE NOWAIT",
+                SQL.identifier(self._table),
+                tuple(self.ids),
+            )
+        )
+        self.invalidate_recordset(["state"])
         for request in self:
             if request.state != "pending":
                 raise UserError(
